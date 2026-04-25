@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Revision Radar — Beta</title>
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f0f0f;
+      --surface:  #1a1a1a;
+      --border:   #2e2e2e;
+      --blue:     #2d86d4;
+      --blue-dk:  #1f6aaa;
+      --accent:   #e8503a;
+      --text:     #f0ede8;
+      --muted:    #888;
+      --success:  #2ecc71;
+      --radius:   10px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 60px;
+    }
+
+    /* ── Header ── */
+    .header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .logo-wrap {
+      width: 240px;
+      height: 240px;
+      margin: 0 auto 0px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .logo-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      border-radius: 22px;
+    }
+    .beta-label {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--blue);
+      margin: 2px 0 6px;
+    }
+    .tagline {
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.6;
+      margin-top: 0;
+    }
+
+    /* ── Report Issue button ── */
+    .btn-issue {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      background: #a01818;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      z-index: 50;
+      transition: background 0.2s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .btn-issue:hover { background: #c01f1f; }
+    .btn-issue svg { flex-shrink: 0; }
+
+    /* ── Card ── */
+    .card {
+      width: 100%;
+      max-width: 740px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      margin-top: 8px;
+    }
+
+    /* ── Side-by-side upload grid ── */
+    .upload-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .upload-col {}
+    .upload-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+      height: 130px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .upload-zone:hover, .upload-zone.dragging {
+      border-color: var(--blue);
+      background: rgba(45,134,212,0.05);
+    }
+    .upload-zone.has-file {
+      border-color: var(--success);
+      background: rgba(46,204,113,0.04);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%;
+    }
+    .upload-icon { font-size: 1.6rem; margin-bottom: 6px; }
+    .upload-hint { font-size: 0.8rem; color: var(--muted); }
+    .upload-filename {
+      font-size: 0.82rem;
+      color: var(--success);
+      font-weight: 500;
+      padding: 0 8px;
+      word-break: break-all;
+      display: none;
+    }
+    .upload-zone.has-file .upload-filename { display: block; }
+    .upload-zone.has-file .upload-hint,
+    .upload-zone.has-file .upload-icon { display: none; }
+
+
+    /* ── Run button ── */
+    .btn-run {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--blue), var(--blue-dk));
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      letter-spacing: 0.3px;
+    }
+    .btn-run:hover { opacity: 0.9; }
+    .btn-run:active { transform: scale(0.99); }
+    .btn-run:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Progress ── */
+    .progress-wrap { margin-top: 20px; display: none; }
+    .progress-wrap.visible { display: block; }
+    .progress-bar-bg {
+      height: 4px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), #5ab4f0);
+      border-radius: 4px;
+      animation: indeterminate 1.5s infinite;
+    }
+    @keyframes indeterminate {
+      0%   { transform: translateX(-100%); width: 60%; }
+      100% { transform: translateX(200%); width: 60%; }
+    }
+    .progress-msg {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    /* ── Error ── */
+    .error-msg {
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: rgba(232,80,58,0.12);
+      border: 1px solid rgba(232,80,58,0.3);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      color: #f08070;
+      display: none;
+    }
+    .error-msg.visible { display: block; }
+
+    /* ── How it works ── */
+    .how {
+      width: 100%;
+      max-width: 740px;
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .how-step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 14px;
+      text-align: center;
+    }
+    .how-step .icon { font-size: 1.4rem; margin-bottom: 8px; }
+    .how-step .step-title { font-size: 0.8rem; font-weight: 600; margin-bottom: 4px; }
+    .how-step .desc  { font-size: 0.75rem; color: var(--muted); line-height: 1.4; }
+
+    /* ── Feedback strip ── */
+    .feedback-strip {
+      width: 100%;
+      max-width: 740px;
+      margin-top: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .feedback-strip p { font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+    .feedback-strip p strong { color: var(--text); }
+    .btn-signup-open {
+      flex-shrink: 0;
+      padding: 8px 18px;
+      background: transparent;
+      border: 1px solid var(--blue);
+      color: var(--blue);
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
+    .btn-signup-open:hover { background: var(--blue); color: #fff; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 36px 32px;
+      width: 100%;
+      max-width: 420px;
+      transform: translateY(20px);
+      transition: transform 0.25s;
+    }
+    .modal-overlay.open .modal { transform: translateY(0); }
+    .modal-close {
+      position: absolute;
+      top: 14px; right: 18px;
+      background: none; border: none;
+      color: var(--muted); font-size: 1.2rem;
+      cursor: pointer; line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; }
+    .modal p {
+      font-size: 0.875rem;
+      color: var(--muted);
+      line-height: 1.55;
+      margin-bottom: 24px;
+    }
+    .modal label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .modal input[type="text"],
+    .modal input[type="email"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 16px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .modal input:focus { border-color: var(--blue); }
+    .modal input::placeholder { color: #555; }
+    .btn-submit {
+      width: 100%;
+      padding: 13px;
+      background: linear-gradient(135deg, var(--blue), var(--blue-dk));
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-submit:hover { opacity: 0.88; }
+    .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .modal-success { text-align: center; padding: 16px 0 8px; display: none; }
+    .modal-success .check { font-size: 2.5rem; }
+    .modal-success h3 { font-size: 1.1rem; margin: 12px 0 6px; }
+    .modal-success p { font-size: 0.85rem; color: var(--muted); margin-bottom: 0; }
+    .modal-error { font-size: 0.82rem; color: #f08070; margin-top: 8px; display: none; }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 56px;
+      width: 100%;
+      max-width: 740px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    .footer-logos {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      flex-wrap: wrap;
+    }
+    .footer-logos a {
+      display: flex;
+      align-items: center;
+      opacity: 1;
+      transition: opacity 0.2s;
+    }
+    .footer-logos a:hover { opacity: 0.8; }
+    .footer-logos img {
+      height: 48px;
+      width: auto;
+      max-width: 180px;
+      object-fit: contain;
+      object-position: center;
+      border-radius: 8px;
+    }
+    .footer-logos .gravity-link {
+      font-size: 0.78rem;
+      color: #555;
+      text-decoration: none;
+      letter-spacing: 0.3px;
+    }
+    .footer-logos .gravity-link:hover { color: #888; }
+    .footer-divider {
+      color: #333;
+      font-size: 0.75rem;
+    }
+    /* ── Counter (bottom, subtle) ── */
+    .counter-bottom {
+      font-size: 0.7rem;
+      color: #333;
+      letter-spacing: 0.3px;
+    }
+    .counter-bottom span { color: #444; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <!-- Report Issue button (fixed top-right) -->
+  <button class="btn-issue" onclick="openIssueModal()">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+      <path d="M6 1L11 10H1L6 1Z" fill="white"/>
+    </svg>
+    Report Issue
+  </button>
+
+  <header class="header">
+    <div class="logo-wrap">
+      <img src="/static/logo.png" alt="Revision Radar" />
+    </div>
+    <p class="beta-label">Beta</p>
+    <p class="tagline">Upload two script drafts. Get a production-ready<br>change report — by department, in seconds.</p>
+  </header>
+
+  <!-- Upload Card -->
+  <div class="card">
+
+    <div class="upload-grid">
+
+      <div class="upload-col">
+        <label class="upload-label">Old Script — earlier draft</label>
+        <div class="upload-zone" id="zone-old">
+          <input type="file" id="old-input" accept=".pdf" />
+          <div class="upload-icon">📄</div>
+          <div class="upload-hint">Click or drag PDF here</div>
+          <div class="upload-filename" id="old-name"></div>
+        </div>
+      </div>
+
+      <div class="upload-col">
+        <label class="upload-label">New Script — latest draft</label>
+        <div class="upload-zone" id="zone-new">
+          <input type="file" id="new-input" accept=".pdf" />
+          <div class="upload-icon">📄</div>
+          <div class="upload-hint">Click or drag PDF here</div>
+          <div class="upload-filename" id="new-name"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <button class="btn-run" id="run-btn" disabled>Generate Report</button>
+
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill"></div></div>
+      <p class="progress-msg" id="progress-msg">Parsing scripts…</p>
+    </div>
+
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+
+  <!-- How it works -->
+  <div class="how">
+    <div class="how-step">
+      <div class="icon">📂</div>
+      <div class="step-title">Upload Two Drafts</div>
+      <div class="desc">Any two PDF versions of the same script</div>
+    </div>
+    <div class="how-step">
+      <div class="icon">⚡</div>
+      <div class="step-title">Auto-Diff</div>
+      <div class="desc">Scene-level changes detected and classified by department</div>
+    </div>
+    <div class="how-step">
+      <div class="icon">📋</div>
+      <div class="step-title">Download Report</div>
+      <div class="desc">Master PDF + targeted dept reports, ready to distribute</div>
+    </div>
+  </div>
+
+  <!-- Beta strip -->
+  <div class="feedback-strip">
+    <p><strong>Helping your production?</strong><br>
+    Join the beta list to get updates and shape what we build next.</p>
+    <button class="btn-signup-open" onclick="openModal()">Join Beta</button>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-logos">
+      <a href="https://gravitysnappartners.com" target="_blank" rel="noopener" class="gravity-link">
+        gravitysnappartners.com
+      </a>
+      <span class="footer-divider">·</span>
+      <a href="https://bgboard.up.railway.app" target="_blank" rel="noopener" title="Novie's BG Board">
+        <img src="/static/bgboard-logo-master.png" alt="Novie's BG Board"
+             onerror="this.parentElement.style.display='none'" />
+      </a>
+      <a href="https://novies-rules-production.up.railway.app" target="_blank" rel="noopener" title="Novie's Rules">
+        <img src="/static/noviesrules_logo.jpg" alt="Novie's Rules"
+             onerror="this.parentElement.style.display='none'" />
+      </a>
+    </div>
+    <div class="counter-bottom">
+      <span id="run-count">{{ usage_count }}</span> reports generated
+    </div>
+  </footer>
+
+  <!-- Report Issue Modal -->
+  <div class="modal-overlay" id="issue-overlay">
+    <div class="modal" style="position:relative;">
+      <button class="modal-close" onclick="closeIssueModal()">✕</button>
+      <div id="issue-form-wrap">
+        <h2>Report an Issue</h2>
+        <p>Something not working right? Tell us what happened and we'll look into it.</p>
+        <label for="issue-text">Describe the issue</label>
+        <textarea id="issue-text" rows="5" placeholder="e.g. The report didn't generate, or the wrong changes were detected…"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:7px;
+                 padding:10px 14px;font-size:0.9rem;color:var(--text);resize:vertical;
+                 outline:none;font-family:inherit;margin-bottom:16px;transition:border-color 0.2s;"
+          onfocus="this.style.borderColor='var(--blue)'"
+          onblur="this.style.borderColor='var(--border)'"></textarea>
+        <label for="issue-email">Your email <span style="color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+        <input type="email" id="issue-email" placeholder="so we can follow up if needed" />
+        <div class="modal-error" id="issue-error"></div>
+        <button class="btn-submit" style="background:linear-gradient(135deg,#a01818,#7a1010);"
+                id="issue-btn" onclick="submitIssue()">Send Report</button>
+      </div>
+      <div class="modal-success" id="issue-success">
+        <div class="check">✅</div>
+        <h3>Thanks — got it.</h3>
+        <p>We'll review your report and fix it in the next update.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Beta Signup Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" style="position:relative;">
+      <button class="modal-close" onclick="closeModal()">✕</button>
+
+      <div id="modal-form-wrap">
+        <h2>Join the Beta</h2>
+        <p>Be the first to know about new features, improvements, and future tools built for production teams.</p>
+
+        <label for="signup-name">Your Name</label>
+        <input type="text" id="signup-name" placeholder="e.g. Alex Rivera" autocomplete="name" />
+
+        <label for="signup-email">Email Address <span style="color:var(--blue)">*</span></label>
+        <input type="email" id="signup-email" placeholder="you@example.com" autocomplete="email" />
+
+        <div class="modal-error" id="modal-error"></div>
+
+        <button class="btn-submit" id="signup-btn" onclick="submitSignup()">Sign Me Up</button>
+
+        <p style="font-size:0.75rem; color:#444; margin-top:12px; margin-bottom:0; text-align:center;">
+          No spam. Unsubscribe anytime.
+        </p>
+      </div>
+
+      <div class="modal-success" id="modal-success">
+        <div class="check">🎬</div>
+        <h3>You're on the list!</h3>
+        <p>We'll be in touch with updates.<br>Thanks for helping us build this.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── File input handling ──
+    function setupZone(zoneId, inputId, nameId) {
+      const zone = document.getElementById(zoneId);
+      const input = document.getElementById(inputId);
+      const nameEl = document.getElementById(nameId);
+
+      input.addEventListener('change', () => {
+        if (input.files.length) {
+          nameEl.textContent = input.files[0].name;
+          zone.classList.add('has-file');
+        }
+        checkReady();
+      });
+
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragging'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('dragging'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('dragging');
+        const file = e.dataTransfer.files[0];
+        if (file && file.type === 'application/pdf') {
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          input.files = dt.files;
+          nameEl.textContent = file.name;
+          zone.classList.add('has-file');
+          checkReady();
+        }
+      });
+    }
+
+    setupZone('zone-old', 'old-input', 'old-name');
+    setupZone('zone-new', 'new-input', 'new-name');
+
+    function checkReady() {
+      const oldFile = document.getElementById('old-input').files.length > 0;
+      const newFile = document.getElementById('new-input').files.length > 0;
+      document.getElementById('run-btn').disabled = !(oldFile && newFile);
+    }
+
+    // ── Run ──
+    const messages = [
+      'Parsing scripts…',
+      'Diffing scenes…',
+      'Classifying changes by department…',
+      'Building report…',
+    ];
+    let msgIdx = 0, msgInterval;
+
+    document.getElementById('run-btn').addEventListener('click', async () => {
+      const oldFile = document.getElementById('old-input').files[0];
+      const newFile = document.getElementById('new-input').files[0];
+      const allDepts = false;
+
+      const btn = document.getElementById('run-btn');
+      const progress = document.getElementById('progress-wrap');
+      const errorEl = document.getElementById('error-msg');
+      const msgEl = document.getElementById('progress-msg');
+
+      btn.disabled = true;
+      progress.classList.add('visible');
+      errorEl.classList.remove('visible');
+
+      msgIdx = 0;
+      msgEl.textContent = messages[0];
+      msgInterval = setInterval(() => {
+        msgIdx = (msgIdx + 1) % messages.length;
+        msgEl.textContent = messages[msgIdx];
+      }, 2200);
+
+      const form = new FormData();
+      form.append('old_script', oldFile);
+      form.append('new_script', newFile);
+      if (allDepts) form.append('all_depts', '1');
+
+      try {
+        const resp = await fetch('/run', { method: 'POST', body: form });
+        clearInterval(msgInterval);
+
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          throw new Error(data.error || `Server error ${resp.status}`);
+        }
+
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const nameMatch = disposition.match(/filename="?([^"]+)"?/);
+        const filename = nameMatch ? nameMatch[1] : 'revision_radar_report.pdf';
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click();
+        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+
+        // Update counter
+        const stats = await fetch('/stats').then(r => r.json()).catch(() => null);
+        if (stats && stats.runs !== undefined) {
+          document.getElementById('run-count').textContent = stats.runs;
+        }
+
+        progress.classList.remove('visible');
+        btn.disabled = false;
+
+        // Show modal after first successful run (once per session)
+        if (!sessionStorage.getItem('modal_shown')) {
+          setTimeout(() => openModal(), 1200);
+          sessionStorage.setItem('modal_shown', '1');
+        }
+
+      } catch (err) {
+        clearInterval(msgInterval);
+        progress.classList.remove('visible');
+        errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+        errorEl.classList.add('visible');
+        btn.disabled = false;
+      }
+    });
+
+    // ── Modal ──
+    function openModal() {
+      document.getElementById('modal-overlay').classList.add('open');
+    }
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.remove('open');
+    }
+    document.getElementById('modal-overlay').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-overlay')) closeModal();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    async function submitSignup() {
+      const name = document.getElementById('signup-name').value.trim();
+      const email = document.getElementById('signup-email').value.trim();
+      const errEl = document.getElementById('modal-error');
+      const btn = document.getElementById('signup-btn');
+
+      errEl.style.display = 'none';
+      if (!email || !email.includes('@')) {
+        errEl.textContent = 'Please enter a valid email address.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+
+      try {
+        const resp = await fetch('/signup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Signup failed.');
+        document.getElementById('modal-form-wrap').style.display = 'none';
+        document.getElementById('modal-success').style.display = 'block';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Sign Me Up';
+      }
+    }
+
+    document.getElementById('signup-email').addEventListener('keydown', e => {
+      if (e.key === 'Enter') submitSignup();
+    });
+
+    // ── Issue modal ──
+    function openIssueModal() {
+      document.getElementById('issue-overlay').classList.add('open');
+    }
+    function closeIssueModal() {
+      document.getElementById('issue-overlay').classList.remove('open');
+    }
+    document.getElementById('issue-overlay').addEventListener('click', e => {
+      if (e.target === document.getElementById('issue-overlay')) closeIssueModal();
+    });
+
+    async function submitIssue() {
+      const text = document.getElementById('issue-text').value.trim();
+      const email = document.getElementById('issue-email').value.trim();
+      const errEl = document.getElementById('issue-error');
+      const btn = document.getElementById('issue-btn');
+
+      errEl.style.display = 'none';
+      if (!text) {
+        errEl.textContent = 'Please describe the issue before sending.';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Sending…';
+
+      try {
+        const resp = await fetch('/report-issue', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: text, email }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed to send.');
+        document.getElementById('issue-form-wrap').style.display = 'none';
+        document.getElementById('issue-success').style.display = 'block';
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Send Report';
+      }
+    }
+  </script>
+
+</body>
+</html>
