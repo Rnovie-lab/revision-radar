@@ -67,6 +67,7 @@ class Scene:
     start_page: int = 0
     blocks: list[Block] = field(default_factory=list)
     revised: bool = False
+    auto_numbered: bool = False  # True if number was synthesized (draft had no scene numbers)
 
     @property
     def characters(self) -> list[str]:
@@ -466,20 +467,33 @@ def _is_scene_header_line(line: list[dict]) -> str | None:
     left_nums = [w for w in line if w["x0"] < 70 and _is_scene_number(w["text"])]
     right_nums = [w for w in line if w["x0"] > 510 and _is_scene_number(w["text"])]
     action_words = [w for w in line if abs(w["x0"] - X_ACTION) < X_TOL]
-    if not left_nums or not action_words:
+    if not action_words:
         return None
-    # Require the left scene number to match the right scene number when
-    # a right number exists (this is the canonical Final Draft pattern and
-    # prevents false positives on lines that merely start with a number).
-    if right_nums and left_nums[0]["text"] != right_nums[0]["text"]:
-        return None
-    # If no right margin match, be conservative: only accept INT./EXT. slugs
-    # or slugs whose body clearly looks like a scene header.
-    if not right_nums:
-        first_word = action_words[0]["text"]
-        if first_word not in {"INT.", "EXT.", "INT/EXT.", "INT./EXT.", "I/E."}:
+
+    SLUG_PREFIXES = {"INT.", "EXT.", "INT/EXT.", "INT./EXT.", "I/E."}
+    first_word = action_words[0]["text"]
+    is_slug_prefix = first_word in SLUG_PREFIXES
+
+    # Case 1: canonical numbered draft — scene number in the left margin.
+    if left_nums:
+        # Require the left scene number to match the right scene number when
+        # a right number exists (this is the canonical Final Draft pattern and
+        # prevents false positives on lines that merely start with a number).
+        if right_nums and left_nums[0]["text"] != right_nums[0]["text"]:
             return None
-    return left_nums[0]["text"]
+        # If no right margin match, be conservative: only accept INT./EXT. slugs
+        # or slugs whose body clearly looks like a scene header.
+        if not right_nums and not is_slug_prefix:
+            return None
+        return left_nums[0]["text"]
+
+    # Case 2: UNNUMBERED draft (Concept/Table drafts before scene numbers are
+    # assigned). No margin number exists, so detect the header purely from the
+    # INT./EXT. slug at the action column. Return "" to signal "header, but no
+    # number" — parse_script will synthesize a sequence number.
+    if is_slug_prefix:
+        return ""
+    return None
 
 
 def parse_script(pdf_path: str | Path) -> Script:
@@ -506,6 +520,7 @@ def parse_script(pdf_path: str | Path) -> Script:
 
         current_scene: Scene | None = None
         last_block_y: float | None = None
+        scene_seq = 0  # running counter for synthesizing unnumbered scene numbers
         for page_idx, page in enumerate(pdf.pages):
             page_num = page_idx + 1
             words = page.extract_words(keep_blank_chars=False)
@@ -525,8 +540,14 @@ def parse_script(pdf_path: str | Path) -> Script:
                         script.scenes.append(current_scene)
                     _, slug_text, revised = _classify_line(line)
                     int_ext, loc, tod, sday = _parse_slug(slug_text)
+                    # Unnumbered draft: synthesize a sequential number so scenes
+                    # remain identifiable, and flag it so the differ aligns by
+                    # slug/order instead of by (non-existent) scene numbers.
+                    auto_numbered = (scene_num == "")
+                    scene_seq += 1
+                    number = scene_num if scene_num else str(scene_seq)
                     current_scene = Scene(
-                        number=scene_num,
+                        number=number,
                         slug=slug_text,
                         int_ext=int_ext,
                         location=loc,
@@ -534,6 +555,7 @@ def parse_script(pdf_path: str | Path) -> Script:
                         story_day=sday,
                         start_page=page_num,
                         revised=revised,
+                        auto_numbered=auto_numbered,
                     )
                     last_block_y = line_y
                     continue

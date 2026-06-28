@@ -316,8 +316,103 @@ def _diff_cast(old: Script, new: Script) -> list[Change]:
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def _is_unnumbered(script: Script) -> bool:
+    """True if the script's scenes carry synthesized numbers (the draft had no
+    real scene numbers in the margins). When either side is unnumbered we can't
+    align scenes by number and must fall back to slug/order alignment."""
+    return any(getattr(s, "auto_numbered", False) for s in script.scenes)
+
+
+def _pair_scenes(olds: list[Scene], news: list[Scene]) -> tuple[
+    list[tuple[Scene, Scene]], list[Scene], list[Scene]
+]:
+    """Greedy pairing of scenes by slug similarity (used inside a 'replace'
+    block of the unnumbered alignment). Returns matched pairs plus leftovers."""
+    pairs: list[tuple[Scene, Scene]] = []
+    used_new: set[int] = set()
+    leftover_old: list[Scene] = []
+    for o in olds:
+        best_j = -1
+        best_ratio = 0.0
+        for j, n in enumerate(news):
+            if j in used_new:
+                continue
+            r = difflib.SequenceMatcher(
+                None, _normalize(o.slug), _normalize(n.slug)
+            ).ratio()
+            if r > best_ratio:
+                best_ratio = r
+                best_j = j
+        if best_j >= 0 and best_ratio >= 0.5:
+            pairs.append((o, news[best_j]))
+            used_new.add(best_j)
+        else:
+            leftover_old.append(o)
+    leftover_new = [n for j, n in enumerate(news) if j not in used_new]
+    return pairs, leftover_old, leftover_new
+
+
+def _scene_added(s: Scene) -> Change:
+    return Change(kind="scene_added", scene_number=s.number,
+                  scene_slug=s.slug, page=s.start_page)
+
+
+def _scene_cut(s: Scene) -> Change:
+    return Change(kind="scene_cut", scene_number=s.number,
+                  scene_slug=s.slug, page=s.start_page)
+
+
+def _diff_scripts_unnumbered(old: Script, new: Script) -> list[Change]:
+    """Diff two scripts whose scenes are unnumbered (Concept/Table drafts).
+
+    Scenes are aligned by a sequence diff over normalized slug lines, which
+    tolerates added/cut/moved scenes. Matched scenes are then diffed block by
+    block exactly like the numbered path, so dialogue, action, slug, and cast
+    changes all surface."""
+    all_changes: list[Change] = []
+    all_changes.extend(_diff_metadata(old, new))
+    all_changes.extend(_diff_cast(old, new))
+
+    old_sigs = [_normalize(s.slug) for s in old.scenes]
+    new_sigs = [_normalize(s.slug) for s in new.scenes]
+    matcher = difflib.SequenceMatcher(None, old_sigs, new_sigs, autojunk=False)
+
+    def _diff_pair(o: Scene, n: Scene) -> None:
+        sc = _diff_scene(o, n)
+        _attach_speakers(n, sc)
+        all_changes.extend(sc)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for o, n in zip(old.scenes[i1:i2], new.scenes[j1:j2]):
+                _diff_pair(o, n)
+        elif tag == "delete":
+            for o in old.scenes[i1:i2]:
+                all_changes.append(_scene_cut(o))
+        elif tag == "insert":
+            for n in new.scenes[j1:j2]:
+                all_changes.append(_scene_added(n))
+        elif tag == "replace":
+            pairs, leftover_old, leftover_new = _pair_scenes(
+                old.scenes[i1:i2], new.scenes[j1:j2]
+            )
+            for o, n in pairs:
+                _diff_pair(o, n)
+            for o in leftover_old:
+                all_changes.append(_scene_cut(o))
+            for n in leftover_new:
+                all_changes.append(_scene_added(n))
+
+    return all_changes
+
+
 def diff_scripts(old: Script, new: Script) -> list[Change]:
     """Produce the full ordered list of changes between two scripts."""
+    # Unnumbered drafts (no scene numbers in the margins) can't be aligned by
+    # scene number — use slug/order alignment instead.
+    if _is_unnumbered(old) or _is_unnumbered(new):
+        return _diff_scripts_unnumbered(old, new)
+
     all_changes: list[Change] = []
 
     # Global / metadata changes first
