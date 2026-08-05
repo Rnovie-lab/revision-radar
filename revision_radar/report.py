@@ -85,6 +85,27 @@ DEPT_HEADER = ParagraphStyle(
     textColor=colors.white, spaceBefore=0, spaceAfter=0, leftIndent=0,
 )
 
+# --- Compact header styles -------------------------------------------------
+HDR_SHOW = ParagraphStyle(
+    name="RRHdrShow", parent=_styles["Normal"],
+    fontName="Helvetica-Bold", fontSize=13, leading=15, spaceAfter=2,
+    textColor=colors.HexColor("#1a1a1a"),
+)
+HDR_LINE = ParagraphStyle(
+    name="RRHdrLine", parent=_styles["Normal"],
+    fontName="Helvetica", fontSize=9.5, leading=12, spaceAfter=1,
+    textColor=colors.HexColor("#4a4a4a"),
+)
+HDR_RULE_COLOR = colors.HexColor("#c8c8c8")
+# Points to drop the logo so its top edge meets the cap height of the show
+# title rather than the top of that line's invisible box.
+LOGO_CAP_ALIGN_NUDGE = 3.75
+LEGEND_LABEL = ParagraphStyle(
+    name="RRLegendLabel", parent=_styles["Normal"],
+    fontName="Helvetica", fontSize=8.5, leading=10.5,
+    textColor=colors.HexColor("#333333"),
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -265,33 +286,143 @@ def _dept_banner(dept_code: str) -> Table:
 
 
 def _dept_legend() -> Table:
-    """Legend chip grid at top of report."""
+    """Legend chip grid at top of report.
+
+    Laid out 3 pairs per row (12 depts => 4 rows) with tight padding so the
+    key reads as one compact band rather than a half-page table.
+    """
+    PAIRS_PER_ROW = 3
     cells = []
     for d in DEPARTMENTS:
-        cells.append([_chip_flowable(d.code), Paragraph(d.name, BODY)])
-    # Lay out 2 pairs per row (wider chips need the room)
+        cells.append([_chip_flowable(d.code), Paragraph(d.name, LEGEND_LABEL)])
     rows = []
     row = []
-    for i, (chip, label) in enumerate(cells):
+    for chip, label in cells:
         row.extend([chip, label])
-        if len(row) == 4:  # 2 pairs per row
+        if len(row) == PAIRS_PER_ROW * 2:
             rows.append(row)
             row = []
     if row:
-        while len(row) < 4:
+        while len(row) < PAIRS_PER_ROW * 2:
             row.append("")
         rows.append(row)
     t = Table(rows,
-              colWidths=[0.62 * inch, 2.5 * inch] * 2,
+              colWidths=[0.62 * inch, 1.78 * inch] * PAIRS_PER_ROW,
               hAlign="LEFT")
     t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 2),
         ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 0.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
     ]))
     return t
+
+
+def _header_block(new, old, *, n_visible: int, n_cast: int, n_set: int,
+                  n_scene: int, n_pure: int) -> Table:
+    """Compact masthead: show info on the left, small logo on the right.
+
+    Replaces the old stacked layout (2" logo above three widely-leaded
+    lines). Everything now sits in one two-column band roughly 0.6" tall.
+    """
+    left = []
+
+    # Line 1 — show / episode / production number
+    show_parts = []
+    if new.title:              show_parts.append(_esc(new.title))
+    if new.episode:            show_parts.append(f"Ep {_esc(new.episode)}")
+    if new.production_number:  show_parts.append(f"#{_esc(new.production_number)}")
+    if show_parts:
+        left.append(Paragraph(
+            " <font color='#aaaaaa'>|</font> ".join(show_parts), HDR_SHOW))
+
+    # Line 2 — the draft comparison
+    def _draft_label(label: str, date: str) -> str:
+        if label and date:
+            return f"{_esc(label)} ({_esc(date)})"
+        return _esc(label) or _esc(date) or "Unknown Draft"
+
+    left.append(Paragraph(
+        f"<b>Comparing:</b> {_draft_label(old.draft_label, old.draft_date)}"
+        f" <font color='#a12020'>&rarr;</font> "
+        f"<b>{_draft_label(new.draft_label, new.draft_date)}</b>",
+        HDR_LINE,
+    ))
+
+    # Line 3 — the counts
+    suppressed = (f" <font color='#999999'>· {n_pure} dialogue-only suppressed</font>"
+                  if n_pure else "")
+    left.append(Paragraph(
+        f"<b>{n_visible} production changes</b> "
+        f"<font color='#777777'>· {n_cast} cast · {n_set} set/location "
+        f"· {n_scene} scene</font>{suppressed}",
+        HDR_LINE,
+    ))
+
+    # Line 4 (optional) — revision history
+    if new.revision_history:
+        rh = " · ".join(f"<b>{c}</b> {d} — {p}"
+                        for d, c, p in new.revision_history)
+        left.append(Paragraph(f"<b>Revisions:</b> {rh}", META))
+
+    # Right cell — logo at half its previous size, flush right
+    right = _logo_flowable(1.0 * inch) or ""
+
+    t = Table([[left, right]], colWidths=[6.15 * inch, 1.35 * inch])
+    t.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (0, 0), "TOP"),
+        ("VALIGN", (1, 0), (1, 0), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        # Nudge the badge down so its top edge lines up with the cap height
+        # of "Emo Bruce" rather than the paragraph's invisible line box.
+        ("TOPPADDING", (1, 0), (1, 0), LOGO_CAP_ALIGN_NUDGE),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.75, HDR_RULE_COLOR),
+    ]))
+    return t
+
+
+def _logo_flowable(target_w: float):
+    """The Revision Radar badge, transparent margins trimmed off.
+
+    The source PNG carries ~14% empty space above and below the artwork.
+    Left in place, that dead space makes the badge look like it is floating
+    low next to the show title. Trimming to the alpha bounding box means the
+    flowable's top edge IS the top of the badge, so a plain top alignment
+    actually lines up with the text.
+    """
+    logo_path = Path(__file__).parent.parent / "static" / "logo.png"
+    if not logo_path.exists():
+        return None
+    lazy = 1
+    try:
+        from io import BytesIO
+        from PIL import Image as PILImage
+
+        im = PILImage.open(logo_path)
+        if im.mode in ("RGBA", "LA"):
+            bbox = im.getchannel("A").getbbox()
+            if bbox:
+                im = im.crop(bbox)
+        nat_w, nat_h = im.size
+        buf = BytesIO()
+        im.save(buf, format="PNG")
+        buf.seek(0)
+        src, lazy = buf, 0
+    except Exception:
+        # PIL unavailable or image unreadable — fall back to the raw file.
+        probe = Image(str(logo_path))
+        nat_w, nat_h = probe.drawWidth, probe.drawHeight
+        src = str(logo_path)
+
+    target_h = target_w * (nat_h / nat_w) if nat_w else target_w
+    img = Image(src, width=target_w, height=target_h, lazy=lazy)
+    img.hAlign = "RIGHT"
+    return img
 
 
 # ---------------------------------------------------------------------------
@@ -361,67 +492,20 @@ def render_report(
     scene_changes = [ch for ch in visible if ch not in cast_changes
                      and ch not in set_changes]
 
-    # --- Logo (aspect-ratio-safe) ---
-    _logo_path = Path(__file__).parent.parent / "static" / "logo.png"
-    if _logo_path.exists():
-        _rdr = Image(str(_logo_path))          # load to read natural size
-        _nat_w, _nat_h = _rdr.drawWidth, _rdr.drawHeight
-        _target_w = 2.0 * inch
-        _target_h = _target_w * (_nat_h / _nat_w) if _nat_w else _target_w
-        logo = Image(str(_logo_path), width=_target_w, height=_target_h)
-        logo.hAlign = "LEFT"
-        story.append(logo)
-        story.append(Spacer(1, 6))
-
-    # --- Header ---
-    if new.title or new.episode or new.production_number:
-        meta_parts = []
-        if new.title:          meta_parts.append(f"<b>{_esc(new.title)}</b>")
-        if new.episode:        meta_parts.append(f"Episode {_esc(new.episode)}")
-        if new.production_number: meta_parts.append(f"Production #{_esc(new.production_number)}")
-        story.append(Paragraph(" &nbsp;·&nbsp; ".join(meta_parts), SUBTITLE))
-
-    # Build "Comparing" line only when we have real label/date data
-    def _draft_label(label: str, date: str) -> str:
-        if label and date:
-            return f"{_esc(label)} ({_esc(date)})"
-        if label:
-            return _esc(label)
-        if date:
-            return _esc(date)
-        return "Unknown Draft"
-
-    story.append(Paragraph(
-        f"<b>Comparing:</b> "
-        f"{_draft_label(old.draft_label, old.draft_date)} &nbsp;&rarr;&nbsp; "
-        f"{_draft_label(new.draft_label, new.draft_date)}",
-        SUBTITLE,
+    # --- Compact masthead: show info left, half-size logo right ---
+    story.append(_header_block(
+        new, old,
+        n_visible=len(visible),
+        n_cast=len(cast_changes),
+        n_set=len(set_changes),
+        n_scene=len(scene_changes),
+        n_pure=n_pure,
     ))
-
-    # Summary counts
-    n_cast  = len(cast_changes)
-    n_set   = len(set_changes)
-    n_scene = len(scene_changes)
-    filtered_note = (f" &nbsp;<font color='#888' size='9'>({n_pure} dialogue-only lines suppressed)</font>"
-                     if n_pure else "")
-    story.append(Paragraph(
-        f"<b>{len(visible)} production changes</b> &nbsp;·&nbsp; "
-        f"{n_cast} cast &nbsp;·&nbsp; {n_set} set/location &nbsp;·&nbsp; "
-        f"{n_scene} scene{filtered_note}",
-        SUBTITLE,
-    ))
-
-    if new.revision_history:
-        rh_lines = [f"<b>{color}</b> {date} — {pages}"
-                    for date, color, pages in new.revision_history]
-        story.append(Paragraph(
-            "<b>Revision history:</b> " + " &nbsp;·&nbsp; ".join(rh_lines), META))
-        story.append(Spacer(1, 4))
-
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("<b>Department key</b>", BODY))
+    story.append(Spacer(1, 5))
+    story.append(Paragraph("<b>Department key</b>", META))
+    story.append(Spacer(1, 2))
     story.append(_dept_legend())
-    story.append(Spacer(1, 12))
+    story.append(Spacer(1, 8))
 
     # =========================================================
     # SECTION 1 — Set / Location Changes
